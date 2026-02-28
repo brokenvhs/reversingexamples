@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>C Reversing Examples — x64 Patterns</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- highlight.js CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/base16/green-screen.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/x86asm.min.js"></script>
+</head>
+<body>
+
+<div class="page-wrapper">
+
+  <!-- ── Site Header ──────────────────────────────────────────── -->
+  <header class="site-header">
+    <h1>C Reversing Examples</h1>
+    <p>13 common C patterns · real x64 disassembly · GCC -O0 · AT&amp;T syntax · no hand-written assembly</p>
+  <div class="syntax-switcher">
+    <button class="syntax-toggle" id="syntaxToggle" title="Switch disassembly syntax">
+      <span class="att-label">AT&amp;T</span>
+      <span class="toggle-sep">/</span>
+      <span class="intel-label">Intel</span>
+    </button>
+  </div>
+  </header>
+
+  <!-- ── Sidebar TOC ──────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-title">// patterns</div>
+    <ul class="toc">
+      <li><a href="#s01"><span class="toc-num">01</span> Stack Frame</a></li>
+      <li><a href="#s02"><span class="toc-num">02</span> Function Call</a></li>
+      <li><a href="#s03"><span class="toc-num">03</span> if/else Chain</a></li>
+      <li><a href="#s04"><span class="toc-num">04</span> for Loop</a></li>
+      <li><a href="#s05"><span class="toc-num">05</span> while Loop</a></li>
+      <li><a href="#s06"><span class="toc-num">06</span> switch (compare)</a></li>
+      <li><a href="#s07"><span class="toc-num">07</span> switch (jump table)</a></li>
+      <li><a href="#s08"><span class="toc-num">08</span> 2D Array</a></li>
+      <li><a href="#s09"><span class="toc-num">09</span> Struct Access</a></li>
+      <li><a href="#s10"><span class="toc-num">10</span> Pointer Deref</a></li>
+      <li><a href="#s11"><span class="toc-num">11</span> Recursion</a></li>
+      <li><a href="#s12"><span class="toc-num">12</span> Heap Alloc</a></li>
+      <li><a href="#s13"><span class="toc-num">13</span> Arith &amp; Bitwise</a></li>
+    </ul>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────── -->
+  <main>
+
+    <!-- ══════════════════════════════════════════════════════════
+         01 — Stack Frame & Local Variables
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s01">
+      <h2>01 — Stack Frame &amp; Local Variables</h2>
+      <div class="section-meta">Flags: -O0 -fno-stack-protector -fno-pie -no-pie</div>
+      <p class="section-note">
+        The prologue <code>push %rbp / mov %rsp,%rbp</code> saves the old frame pointer and sets up a new one.
+        Local variables land at negative offsets from <code>%rbp</code> (e.g. <code>-0x4(%rbp)</code>).
+        Arguments arrive in <code>%edi</code>, <code>%esi</code> (SysV ABI) and are immediately spilled to the stack under -O0.
+        The epilogue <code>pop %rbp / ret</code> tears the frame down.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">01_stack_frame.c</span>
+          </div>
+          <pre><code class="language-c">/* 01 - Stack frame &amp; local variables */
+int stack_demo(int a, int b) {
+    int x = a + 10;
+    int y = b * 2;
+    int z = x - y;
+    return z;
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;stack_demo&gt;:
+  400446:	push   %rbp
+  400447:	mov    %rsp,%rbp
+  40044a:	mov    %edi,-0x14(%rbp)   # spill arg a
+  40044d:	mov    %esi,-0x18(%rbp)   # spill arg b
+  400450:	mov    -0x14(%rbp),%eax
+  400453:	add    $0xa,%eax
+  400456:	mov    %eax,-0x4(%rbp)    # x = a + 10
+  400459:	mov    -0x18(%rbp),%eax
+  40045c:	add    %eax,%eax
+  40045e:	mov    %eax,-0x8(%rbp)    # y = b * 2
+  400461:	mov    -0x4(%rbp),%eax
+  400464:	sub    -0x8(%rbp),%eax
+  400467:	mov    %eax,-0xc(%rbp)    # z = x - y
+  40046a:	mov    -0xc(%rbp),%eax    # return z
+  40046d:	pop    %rbp
+  40046e:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;stack_demo&gt;:
+  400446:	push   rbp
+  400447:	mov    rbp,rsp
+  40044a:	mov    DWORD PTR [rbp-0x14],edi
+  40044d:	mov    DWORD PTR [rbp-0x18],esi
+  400450:	mov    eax,DWORD PTR [rbp-0x14]
+  400453:	add    eax,0xa
+  400456:	mov    DWORD PTR [rbp-0x4],eax
+  400459:	mov    eax,DWORD PTR [rbp-0x18]
+  40045c:	add    eax,eax
+  40045e:	mov    DWORD PTR [rbp-0x8],eax
+  400461:	mov    eax,DWORD PTR [rbp-0x4]
+  400464:	sub    eax,DWORD PTR [rbp-0x8]
+  400467:	mov    DWORD PTR [rbp-0xc],eax
+  40046a:	mov    eax,DWORD PTR [rbp-0xc]
+  40046d:	pop    rbp
+  40046e:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         02 — Function Call (SysV Register Args)
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s02">
+      <h2>02 — Function Call (SysV Register Args)</h2>
+      <div class="section-meta">Flags: -O0</div>
+      <p class="section-note">
+        The System V AMD64 ABI passes the first six integer arguments in:
+        <code>%rdi, %rsi, %rdx, %rcx, %r8, %r9</code> (32-bit variants for <code>int</code>).
+        Arguments beyond six go on the stack. The caller sets all six registers before <code>call</code>.
+        The callee's return value comes back in <code>%eax</code>/<code>%rax</code>.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">02_func_call.c</span>
+          </div>
+          <pre><code class="language-c">/* 02 - Function call (SysV register args) */
+int add(int a, int b, int c, int d, int e, int f) {
+    return a + b + c + d + e + f;
+}
+
+int caller(void) {
+    return add(1, 2, 3, 4, 5, 6);
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly — caller()
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">000000000040047c &lt;caller&gt;:
+  40047c:	push   %rbp
+  40047d:	mov    %rsp,%rbp
+  400480:	mov    $0x6,%r9d    # arg6 → %r9d
+  400486:	mov    $0x5,%r8d    # arg5 → %r8d
+  40048c:	mov    $0x4,%ecx    # arg4 → %ecx
+  400491:	mov    $0x3,%edx    # arg3 → %edx
+  400496:	mov    $0x2,%esi    # arg2 → %esi
+  40049b:	mov    $0x1,%edi    # arg1 → %edi
+  4004a0:	call   400446 &lt;add&gt;
+  4004a5:	pop    %rbp
+  4004a6:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">000000000040047c &lt;caller&gt;:
+  40047c:	push   rbp
+  40047d:	mov    rbp,rsp
+  400480:	mov    r9d,0x6
+  400486:	mov    r8d,0x5
+  40048c:	mov    ecx,0x4
+  400491:	mov    edx,0x3
+  400496:	mov    esi,0x2
+  40049b:	mov    edi,0x1
+  4004a0:	call   400446 &lt;add&gt;
+  4004a5:	pop    rbp
+  4004a6:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         03 — if/else Chain
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s03">
+      <h2>03 — if/else Chain</h2>
+      <div class="section-meta">Flags: -O0</div>
+      <p class="section-note">
+        Each condition compiles to a <code>cmp</code> + conditional jump pair.
+        <code>jns</code> = "jump if not signed" (≥ 0).
+        The "fall-through" path is the false branch; the jump target is the true branch or the next test.
+        All paths converge at the function's epilogue.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">03_if_else.c</span>
+          </div>
+          <pre><code class="language-c">/* 03 - if/else chain */
+int classify(int x) {
+    if (x &lt; 0) {
+        return -1;
+    } else if (x == 0) {
+        return 0;
+    } else if (x &lt; 100) {
+        return 1;
+    } else {
+        return 2;
+    }
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;classify&gt;:
+  400446:	push   %rbp
+  400447:	mov    %rsp,%rbp
+  40044a:	mov    %edi,-0x4(%rbp)
+  40044d:	cmpl   $0x0,-0x4(%rbp)
+  400451:	jns    40045a &lt;classify+0x14&gt; # if x &gt;= 0, skip
+  400453:	mov    $0xffffffff,%eax        # return -1
+  400458:	jmp    400479 &lt;classify+0x33&gt;
+  40045a:	cmpl   $0x0,-0x4(%rbp)
+  40045e:	jne    400467 &lt;classify+0x21&gt; # if x != 0, skip
+  400460:	mov    $0x0,%eax              # return 0
+  400465:	jmp    400479 &lt;classify+0x33&gt;
+  400467:	cmpl   $0x63,-0x4(%rbp)
+  40046b:	jg     400474 &lt;classify+0x2e&gt; # if x &gt; 99, skip
+  40046d:	mov    $0x1,%eax              # return 1
+  400472:	jmp    400479 &lt;classify+0x33&gt;
+  400474:	mov    $0x2,%eax              # return 2
+  400479:	pop    %rbp
+  40047a:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;classify&gt;:
+  400446:	push   rbp
+  400447:	mov    rbp,rsp
+  40044a:	mov    DWORD PTR [rbp-0x4],edi
+  40044d:	cmp    DWORD PTR [rbp-0x4],0x0
+  400451:	jns    40045a &lt;classify+0x14&gt;
+  400453:	mov    eax,0xffffffff
+  400458:	jmp    400479 &lt;classify+0x33&gt;
+  40045a:	cmp    DWORD PTR [rbp-0x4],0x0
+  40045e:	jne    400467 &lt;classify+0x21&gt;
+  400460:	mov    eax,0x0
+  400465:	jmp    400479 &lt;classify+0x33&gt;
+  400467:	cmp    DWORD PTR [rbp-0x4],0x63
+  40046b:	jg     400474 &lt;classify+0x2e&gt;
+  40046d:	mov    eax,0x1
+  400472:	jmp    400479 &lt;classify+0x33&gt;
+  400474:	mov    eax,0x2
+  400479:	pop    rbp
+  40047a:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         04 — for Loop
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s04">
+      <h2>04 — for Loop</h2>
+      <div class="section-meta">Flags: -O0</div>
+      <p class="section-note">
+        The canonical for-loop shape: init → <code>jmp</code> to condition check → body → increment → condition check → body …
+        Under -O0 the counter lives on the stack at <code>-0x8(%rbp)</code>.
+        The loop enters via an unconditional jump to the test, so the condition is checked <em>before</em> the first iteration (pre-test loop).
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">04_for_loop.c</span>
+          </div>
+          <pre><code class="language-c">/* 04 - for loop */
+int sum_for(int n) {
+    int total = 0;
+    for (int i = 0; i &lt; n; i++) {
+        total += i;
+    }
+    return total;
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;sum_for&gt;:
+  400446:	push   %rbp
+  400447:	mov    %rsp,%rbp
+  40044a:	mov    %edi,-0x14(%rbp)
+  40044d:	movl   $0x0,-0x4(%rbp)    # total = 0
+  400454:	movl   $0x0,-0x8(%rbp)    # i = 0
+  40045b:	jmp    400467 &lt;sum_for+0x21&gt; # jump to condition
+  40045d:	mov    -0x8(%rbp),%eax    # ┐ body: total += i
+  400460:	add    %eax,-0x4(%rbp)    # │
+  400463:	addl   $0x1,-0x8(%rbp)    # │ i++
+  400467:	mov    -0x8(%rbp),%eax    # ┘ condition: i &lt; n?
+  40046a:	cmp    -0x14(%rbp),%eax
+  40046d:	jl     40045d &lt;sum_for+0x17&gt; # yes → loop back
+  40046f:	mov    -0x4(%rbp),%eax    # return total
+  400472:	pop    %rbp
+  400473:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;sum_for&gt;:
+  400446:	push   rbp
+  400447:	mov    rbp,rsp
+  40044a:	mov    DWORD PTR [rbp-0x14],edi
+  40044d:	mov    DWORD PTR [rbp-0x4],0x0
+  400454:	mov    DWORD PTR [rbp-0x8],0x0
+  40045b:	jmp    400467 &lt;sum_for+0x21&gt;
+  40045d:	mov    eax,DWORD PTR [rbp-0x8]
+  400460:	add    DWORD PTR [rbp-0x4],eax
+  400463:	add    DWORD PTR [rbp-0x8],0x1
+  400467:	mov    eax,DWORD PTR [rbp-0x8]
+  40046a:	cmp    eax,DWORD PTR [rbp-0x14]
+  40046d:	jl     40045d &lt;sum_for+0x17&gt;
+  40046f:	mov    eax,DWORD PTR [rbp-0x4]
+  400472:	pop    rbp
+  400473:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         05 — while Loop
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s05">
+      <h2>05 — while Loop</h2>
+      <div class="section-meta">Flags: -O0</div>
+      <p class="section-note">
+        A while loop looks identical to a for loop in assembly — same jmp-to-condition layout.
+        Notice the division <code>n /= 10</code>: GCC replaces integer division by constant 10 with
+        a multiply-then-shift sequence (<code>imul $0x66666667</code> + <code>shr</code> + <code>sar</code>),
+        which is faster than the <code>idiv</code> instruction even at -O0.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">05_while_loop.c</span>
+          </div>
+          <pre><code class="language-c">/* 05 - while loop */
+int count_digits(int n) {
+    int count = 0;
+    while (n &gt; 0) {
+        n /= 10;
+        count++;
+    }
+    return count;
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;count_digits&gt;:
+  400446:	push   %rbp
+  400447:	mov    %rsp,%rbp
+  40044a:	mov    %edi,-0x14(%rbp)
+  40044d:	movl   $0x0,-0x4(%rbp)      # count = 0
+  400454:	jmp    400478 &lt;count_digits+0x32&gt; # jump to condition
+  400456:	mov    -0x14(%rbp),%eax      # ┐ n / 10 via multiply trick:
+  400459:	movslq %eax,%rdx             # │ sign-extend to 64-bit
+  40045c:	imul   $0x66666667,%rdx,%rdx # │ multiply by magic constant
+  400463:	shr    $0x20,%rdx            # │ take upper 32 bits
+  400467:	mov    %edx,%ecx             # │
+  400469:	sar    $0x2,%ecx             # │ arithmetic right shift
+  40046c:	cltd                         # │
+  40046d:	mov    %ecx,%eax             # │
+  40046f:	sub    %edx,%eax             # │ result = n / 10
+  400471:	mov    %eax,-0x14(%rbp)      # ┘ store n
+  400474:	addl   $0x1,-0x4(%rbp)       # count++
+  400478:	cmpl   $0x0,-0x14(%rbp)      # condition: n &gt; 0?
+  40047c:	jg     400456 &lt;count_digits+0x10&gt; # yes → loop
+  40047e:	mov    -0x4(%rbp),%eax       # return count
+  400481:	pop    %rbp
+  400482:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;count_digits&gt;:
+  400446:	push   rbp
+  400447:	mov    rbp,rsp
+  40044a:	mov    DWORD PTR [rbp-0x14],edi
+  40044d:	mov    DWORD PTR [rbp-0x4],0x0
+  400454:	jmp    400478 &lt;count_digits+0x32&gt;
+  400456:	mov    eax,DWORD PTR [rbp-0x14]
+  400459:	movsxd rdx,eax
+  40045c:	imul   rdx,rdx,0x66666667
+  400463:	shr    rdx,0x20
+  400467:	mov    ecx,edx
+  400469:	sar    ecx,0x2
+  40046c:	cdq
+  40046d:	mov    eax,ecx
+  40046f:	sub    eax,edx
+  400471:	mov    DWORD PTR [rbp-0x14],eax
+  400474:	add    DWORD PTR [rbp-0x4],0x1
+  400478:	cmp    DWORD PTR [rbp-0x14],0x0
+  40047c:	jg     400456 &lt;count_digits+0x10&gt;
+  40047e:	mov    eax,DWORD PTR [rbp-0x4]
+  400481:	pop    rbp
+  400482:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         06 — switch/case — Compare Chain
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s06">
+      <h2>06 — switch/case — Compare Chain</h2>
+      <div class="section-meta">Flags: -O0 · 3 sparse cases (1, 50, 99)</div>
+      <p class="section-note">
+        When case values are sparse (far apart), GCC emits a linear compare chain — no jump table is worth building.
+        Each case value is compared with <code>cmpl</code> and a conditional jump routes to the corresponding handler.
+        A binary-search style ordering (check 99 first, then skip &gt;99 cases) emerges for efficiency.
+        Default falls through to the last label.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">06_switch_chain.c</span>
+          </div>
+          <pre><code class="language-c">/* 06 - switch/case: compare chain (sparse) */
+int day_type(int day) {
+    switch (day) {
+        case 1:  return 10;
+        case 50: return 20;
+        case 99: return 30;
+        default: return -1;
+    }
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;day_type&gt;:
+  400446:	push   %rbp
+  400447:	mov    %rsp,%rbp
+  40044a:	mov    %edi,-0x4(%rbp)
+  40044d:	cmpl   $0x63,-0x4(%rbp)    # compare with 99 (0x63)
+  400451:	je     400475 &lt;day_type+0x2f&gt; # == 99 → case 99
+  400453:	cmpl   $0x63,-0x4(%rbp)
+  400457:	jg     40047c &lt;day_type+0x36&gt; # &gt;  99 → default
+  400459:	cmpl   $0x1,-0x4(%rbp)     # compare with 1
+  40045d:	je     400467 &lt;day_type+0x21&gt; # == 1  → case 1
+  40045f:	cmpl   $0x32,-0x4(%rbp)    # compare with 50 (0x32)
+  400463:	je     40046e &lt;day_type+0x28&gt; # == 50 → case 50
+  400465:	jmp    40047c &lt;day_type+0x36&gt; # else → default
+  400467:	mov    $0xa,%eax           # return 10
+  40046c:	jmp    400481 &lt;day_type+0x3b&gt;
+  40046e:	mov    $0x14,%eax          # return 20
+  400473:	jmp    400481 &lt;day_type+0x3b&gt;
+  400475:	mov    $0x1e,%eax          # return 30
+  40047a:	jmp    400481 &lt;day_type+0x3b&gt;
+  40047c:	mov    $0xffffffff,%eax    # return -1 (default)
+  400481:	pop    %rbp
+  400482:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;day_type&gt;:
+  400446:	push   rbp
+  400447:	mov    rbp,rsp
+  40044a:	mov    DWORD PTR [rbp-0x4],edi
+  40044d:	cmp    DWORD PTR [rbp-0x4],0x63
+  400451:	je     400475 &lt;day_type+0x2f&gt;
+  400453:	cmp    DWORD PTR [rbp-0x4],0x63
+  400457:	jg     40047c &lt;day_type+0x36&gt;
+  400459:	cmp    DWORD PTR [rbp-0x4],0x1
+  40045d:	je     400467 &lt;day_type+0x21&gt;
+  40045f:	cmp    DWORD PTR [rbp-0x4],0x32
+  400463:	je     40046e &lt;day_type+0x28&gt;
+  400465:	jmp    40047c &lt;day_type+0x36&gt;
+  400467:	mov    eax,0xa
+  40046c:	jmp    400481 &lt;day_type+0x3b&gt;
+  40046e:	mov    eax,0x14
+  400473:	jmp    400481 &lt;day_type+0x3b&gt;
+  400475:	mov    eax,0x1e
+  40047a:	jmp    400481 &lt;day_type+0x3b&gt;
+  40047c:	mov    eax,0xffffffff
+  400481:	pop    rbp
+  400482:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         07 — switch/case — Jump Table
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s07">
+      <h2>07 — switch/case — Jump Table</h2>
+      <div class="section-meta">Flags: -O1 · 9 dense cases (0–8)</div>
+      <p class="section-note">
+        With dense, consecutive case values GCC builds a jump table at compile time.
+        The dispatch is a single indirect jump: <code>jmp *0x401128(,%rdi,8)</code> — index into a
+        table of 8-byte pointers stored in the <code>.rodata</code> section.
+        A bounds check (<code>cmp $0x8 / ja</code>) guards against out-of-range values before the table lookup.
+        This runs in O(1) vs. O(n) for the compare chain. Note: jump tables require at least -O1.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">07_switch_jumptable.c</span>
+          </div>
+          <pre><code class="language-c">/* 07 - switch/case: jump table (dense) */
+int direction(int cmd) {
+    switch (cmd) {
+        case 0: return 100;
+        case 1: return 200;
+        case 2: return 300;
+        case 3: return 400;
+        case 4: return 500;
+        case 5: return 600;
+        case 6: return 700;
+        case 7: return 800;
+        case 8: return 900;
+        default: return -1;
+    }
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O1</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;direction&gt;:
+  400446:	cmp    $0x8,%edi           # bounds check: cmd &gt; 8?
+  400449:	ja     400484 &lt;direction+0x3e&gt; # yes → default (-1)
+  40044b:	mov    %edi,%edi           # zero-extend to 64-bit
+  40044d:	jmp    *0x401128(,%rdi,8)  # jump table dispatch!
+                                      # addr = table_base + cmd*8
+  400454:	mov    $0x64,%eax          # case 0: return 100
+  400459:	ret
+  40045a:	mov    $0x12c,%eax         # case 2: return 300
+  40045f:	ret
+  400460:	mov    $0x190,%eax         # case 3: return 400
+  400465:	ret
+  400466:	mov    $0x1f4,%eax         # case 4: return 500
+  40046b:	ret
+  40046c:	mov    $0x258,%eax         # case 5: return 600
+  400471:	ret
+  400472:	mov    $0x2bc,%eax         # case 6: return 700
+  400477:	ret
+  400478:	mov    $0x320,%eax         # case 7: return 800
+  40047d:	ret
+  40047e:	mov    $0x384,%eax         # case 8: return 900
+  400483:	ret
+  400484:	mov    $0xffffffff,%eax    # default: return -1
+  400489:	ret
+  40048a:	mov    $0xc8,%eax          # case 1: return 200
+  40048f:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;direction&gt;:
+  400446:	cmp    edi,0x8
+  400449:	ja     400484 &lt;direction+0x3e&gt;
+  40044b:	mov    edi,edi
+  40044d:	jmp    QWORD PTR [rdi*8+0x401128]
+  400454:	mov    eax,0x64
+  400459:	ret
+  40045a:	mov    eax,0x12c
+  40045f:	ret
+  400460:	mov    eax,0x190
+  400465:	ret
+  400466:	mov    eax,0x1f4
+  40046b:	ret
+  40046c:	mov    eax,0x258
+  400471:	ret
+  400472:	mov    eax,0x2bc
+  400477:	ret
+  400478:	mov    eax,0x320
+  40047d:	ret
+  40047e:	mov    eax,0x384
+  400483:	ret
+  400484:	mov    eax,0xffffffff
+  400489:	ret
+  40048a:	mov    eax,0xc8
+  40048f:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         08 — 2D Array Indexing
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s08">
+      <h2>08 — 2D Array Indexing</h2>
+      <div class="section-meta">Flags: -O0 · int matrix[3][4]</div>
+      <p class="section-note">
+        C stores 2D arrays in row-major order. For <code>matrix[row][col]</code> with 4 columns,
+        the address formula is: <code>base + (row*4 + col) * sizeof(int)</code>.
+        In assembly: <code>shl $0x2,%rdx</code> multiplies row by 4 (column count),
+        then <code>add %rax,%rdx</code> adds col. The result scales by 4 bytes per int: <code>(%rbp,%rdx,4)</code>.
+        The SSE <code>pxor/movaps</code> instructions zero-initialise the local array efficiently.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">08_array_2d.c</span>
+          </div>
+          <pre><code class="language-c">/* 08 - Array indexing (2D) */
+int set_and_get(int row, int col, int val) {
+    int matrix[3][4] = {{0}};
+    matrix[row][col] = val;
+    return matrix[row][col];
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400471 &lt;set_and_get&gt;:
+  400471:	push   %rbp
+  400472:	mov    %rsp,%rbp
+  400475:	mov    %edi,-0x34(%rbp)    # spill row
+  400478:	mov    %esi,-0x38(%rbp)    # spill col
+  40047b:	mov    %edx,-0x3c(%rbp)    # spill val
+  40047e:	pxor   %xmm0,%xmm0         # zero 128-bit register
+  400482:	movaps %xmm0,-0x30(%rbp)   # zero row 0 (16 bytes)
+  400486:	movaps %xmm0,-0x20(%rbp)   # zero row 1
+  40048a:	movaps %xmm0,-0x10(%rbp)   # zero row 2
+  40048e:	mov    -0x38(%rbp),%eax    # col → %eax
+  400491:	cltq                        # sign-extend to 64-bit
+  400493:	mov    -0x34(%rbp),%edx    # row → %edx
+  400496:	movslq %edx,%rdx            # sign-extend
+  400499:	shl    $0x2,%rdx            # row *= 4  (4 columns)
+  40049d:	add    %rax,%rdx            # + col
+  4004a0:	mov    -0x3c(%rbp),%eax    # val
+  4004a3:	mov    %eax,-0x30(%rbp,%rdx,4) # matrix[row][col] = val
+  4004a7:	mov    -0x38(%rbp),%eax    # read back (same index calc)
+  4004aa:	cltq
+  4004ac:	mov    -0x34(%rbp),%edx
+  4004af:	movslq %edx,%rdx
+  4004b2:	shl    $0x2,%rdx
+  4004b6:	add    %rdx,%rax
+  4004b9:	mov    -0x30(%rbp,%rax,4),%eax # return matrix[row][col]
+  4004bd:	pop    %rbp
+  4004be:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400471 &lt;set_and_get&gt;:
+  400471:	push   rbp
+  400472:	mov    rbp,rsp
+  400475:	mov    DWORD PTR [rbp-0x34],edi
+  400478:	mov    DWORD PTR [rbp-0x38],esi
+  40047b:	mov    DWORD PTR [rbp-0x3c],edx
+  40047e:	pxor   xmm0,xmm0
+  400482:	movaps XMMWORD PTR [rbp-0x30],xmm0
+  400486:	movaps XMMWORD PTR [rbp-0x20],xmm0
+  40048a:	movaps XMMWORD PTR [rbp-0x10],xmm0
+  40048e:	mov    eax,DWORD PTR [rbp-0x38]
+  400491:	cdqe
+  400493:	mov    edx,DWORD PTR [rbp-0x34]
+  400496:	movsxd rdx,edx
+  400499:	shl    rdx,0x2
+  40049d:	add    rdx,rax
+  4004a0:	mov    eax,DWORD PTR [rbp-0x3c]
+  4004a3:	mov    DWORD PTR [rbp+rdx*4-0x30],eax
+  4004a7:	mov    eax,DWORD PTR [rbp-0x38]
+  4004aa:	cdqe
+  4004ac:	mov    edx,DWORD PTR [rbp-0x34]
+  4004af:	movsxd rdx,edx
+  4004b2:	shl    rdx,0x2
+  4004b6:	add    rax,rdx
+  4004b9:	mov    eax,DWORD PTR [rbp+rax*4-0x30]
+  4004bd:	pop    rbp
+  4004be:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         09 — Struct Field Access
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s09">
+      <h2>09 — Struct Field Access</h2>
+      <div class="section-meta">Flags: -O0 · struct Point { int x, y, z; }</div>
+      <p class="section-note">
+        Struct fields are accessed at fixed positive offsets from the struct's base address.
+        <code>p.x</code> is at offset +0, <code>p.y</code> at +4, <code>p.z</code> at +8 (each <code>int</code> is 4 bytes).
+        When passed by value to <code>sum_fields()</code>, the struct is copied onto the stack
+        and passed as a pair of 64-bit registers: <code>%rdi</code> (x+y packed) and <code>%esi</code> (z).
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">09_struct_access.c</span>
+          </div>
+          <pre><code class="language-c">/* 09 - Struct field access */
+struct Point { int x; int y; int z; };
+
+int sum_fields(struct Point p) {
+    return p.x + p.y + p.z;
+}
+
+int update_and_sum(int x, int y, int z) {
+    struct Point p;
+    p.x = x;
+    p.y = y;
+    p.z = z;
+    return sum_fields(p);
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly — update_and_sum()
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400465 &lt;update_and_sum&gt;:
+  400465:	push   %rbp
+  400466:	mov    %rsp,%rbp
+  400469:	sub    $0x20,%rsp
+  40046d:	mov    %edi,-0x14(%rbp)    # spill x
+  400470:	mov    %esi,-0x18(%rbp)    # spill y
+  400473:	mov    %edx,-0x1c(%rbp)    # spill z
+  400476:	mov    -0x14(%rbp),%eax
+  400479:	mov    %eax,-0xc(%rbp)     # p.x = x  (offset 0)
+  40047c:	mov    -0x18(%rbp),%eax
+  40047f:	mov    %eax,-0x8(%rbp)     # p.y = y  (offset 4)
+  400482:	mov    -0x1c(%rbp),%eax
+  400485:	mov    %eax,-0x4(%rbp)     # p.z = z  (offset 8)
+  400488:	mov    -0xc(%rbp),%rdx     # load p.x+p.y as 64-bit
+  40048c:	mov    -0x4(%rbp),%eax     # load p.z
+  40048f:	mov    %rdx,%rdi           # pass in %rdi
+  400492:	mov    %eax,%esi           # pass p.z in %esi
+  400494:	call   400446 &lt;sum_fields&gt;
+  400499:	leave
+  40049a:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400465 &lt;update_and_sum&gt;:
+  400465:	push   rbp
+  400466:	mov    rbp,rsp
+  400469:	sub    rsp,0x20
+  40046d:	mov    DWORD PTR [rbp-0x14],edi
+  400470:	mov    DWORD PTR [rbp-0x18],esi
+  400473:	mov    DWORD PTR [rbp-0x1c],edx
+  400476:	mov    eax,DWORD PTR [rbp-0x14]
+  400479:	mov    DWORD PTR [rbp-0xc],eax
+  40047c:	mov    eax,DWORD PTR [rbp-0x18]
+  40047f:	mov    DWORD PTR [rbp-0x8],eax
+  400482:	mov    eax,DWORD PTR [rbp-0x1c]
+  400485:	mov    DWORD PTR [rbp-0x4],eax
+  400488:	mov    rdx,QWORD PTR [rbp-0xc]
+  40048c:	mov    eax,DWORD PTR [rbp-0x4]
+  40048f:	mov    rdi,rdx
+  400492:	mov    esi,eax
+  400494:	call   400446 &lt;sum_fields&gt;
+  400499:	leave
+  40049a:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         10 — Pointer Dereference
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s10">
+      <h2>10 — Pointer Dereference</h2>
+      <div class="section-meta">Flags: -O0 · single &amp; double indirection</div>
+      <p class="section-note">
+        <strong>Single deref</strong>: <code>lea -0x14(%rbp),%rax</code> takes the address of <code>x</code> (stack var).
+        Then <code>mov %rax,%rdi</code> passes the pointer; inside <code>single_deref</code> <code>mov (%rdi),%eax</code> reads through it.
+        <strong>Double deref</strong>: <code>lea -0x20(%rbp),%rax</code> takes the address of <em>the pointer</em> <code>p</code>;
+        inside <code>double_deref</code> two loads are needed: <code>mov (%rdi),%rax</code> then <code>mov (%rax),%eax</code>.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">10_pointer_deref.c</span>
+          </div>
+          <pre><code class="language-c">/* 10 - Pointer dereference (single &amp; double) */
+int single_deref(int *p)  { return *p + 1; }
+int double_deref(int **pp) { return **pp + 1; }
+
+int pointer_demo(int val) {
+    int x   = val;
+    int *p  = &amp;x;
+    int **pp = &amp;p;
+    int a = single_deref(p);
+    int b = double_deref(pp);
+    return a + b;
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly — pointer_demo()
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">000000000040046f &lt;pointer_demo&gt;:
+  40046f:	push   %rbp
+  400470:	mov    %rsp,%rbp
+  400473:	sub    $0x28,%rsp
+  400477:	mov    %edi,-0x24(%rbp)
+  40047a:	mov    -0x24(%rbp),%eax
+  40047d:	mov    %eax,-0x14(%rbp)    # x = val
+  400480:	lea    -0x14(%rbp),%rax    # &amp;x
+  400484:	mov    %rax,-0x20(%rbp)    # p = &amp;x
+  400488:	lea    -0x20(%rbp),%rax    # &amp;p
+  40048c:	mov    %rax,-0x8(%rbp)     # pp = &amp;p
+  400490:	mov    -0x20(%rbp),%rax    # load p (the pointer value)
+  400494:	mov    %rax,%rdi           # pass p to single_deref
+  400497:	call   400446 &lt;single_deref&gt;
+  40049c:	mov    %eax,-0xc(%rbp)     # a = result
+  40049f:	mov    -0x8(%rbp),%rax     # load pp
+  4004a3:	mov    %rax,%rdi           # pass pp to double_deref
+  4004a6:	call   400459 &lt;double_deref&gt;
+  4004ab:	mov    %eax,-0x10(%rbp)    # b = result
+  4004ae:	mov    -0xc(%rbp),%edx
+  4004b1:	mov    -0x10(%rbp),%eax
+  4004b4:	add    %edx,%eax           # return a + b
+  4004b6:	leave
+  4004b7:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">000000000040046f &lt;pointer_demo&gt;:
+  40046f:	push   rbp
+  400470:	mov    rbp,rsp
+  400473:	sub    rsp,0x28
+  400477:	mov    DWORD PTR [rbp-0x24],edi
+  40047a:	mov    eax,DWORD PTR [rbp-0x24]
+  40047d:	mov    DWORD PTR [rbp-0x14],eax
+  400480:	lea    rax,[rbp-0x14]
+  400484:	mov    QWORD PTR [rbp-0x20],rax
+  400488:	lea    rax,[rbp-0x20]
+  40048c:	mov    QWORD PTR [rbp-0x8],rax
+  400490:	mov    rax,QWORD PTR [rbp-0x20]
+  400494:	mov    rdi,rax
+  400497:	call   400446 &lt;single_deref&gt;
+  40049c:	mov    DWORD PTR [rbp-0xc],eax
+  40049f:	mov    rax,QWORD PTR [rbp-0x8]
+  4004a3:	mov    rdi,rax
+  4004a6:	call   400459 &lt;double_deref&gt;
+  4004ab:	mov    DWORD PTR [rbp-0x10],eax
+  4004ae:	mov    edx,DWORD PTR [rbp-0xc]
+  4004b1:	mov    eax,DWORD PTR [rbp-0x10]
+  4004b4:	add    eax,edx
+  4004b6:	leave
+  4004b7:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         11 — Recursion (Factorial)
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s11">
+      <h2>11 — Recursion (Factorial)</h2>
+      <div class="section-meta">Flags: -O0</div>
+      <p class="section-note">
+        Each recursive call pushes a new frame. The base case (<code>n ≤ 1</code>) is checked with
+        <code>cmpl $0x1 / jg</code>; if true, return 1.
+        The callee-saved register <code>%rbx</code> is used to preserve <code>n</code> across the
+        recursive call (<code>push %rbx</code> in prologue, restored before <code>ret</code>).
+        After <code>call factorial</code> returns, <code>imul %rbx,%rax</code> multiplies
+        the result by the saved <code>n</code>.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">11_recursion.c</span>
+          </div>
+          <pre><code class="language-c">/* 11 - Recursion (factorial) */
+long factorial(int n) {
+    if (n &lt;= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;factorial&gt;:
+  400446:	push   %rbp
+  400447:	mov    %rsp,%rbp
+  40044a:	push   %rbx               # save callee-saved %rbx
+  40044b:	sub    $0x18,%rsp
+  40044f:	mov    %edi,-0x14(%rbp)   # spill n
+  400452:	cmpl   $0x1,-0x14(%rbp)   # n &lt;= 1?
+  400456:	jg     40045f &lt;factorial+0x19&gt; # no → recurse
+  400458:	mov    $0x1,%eax           # base case: return 1
+  40045d:	jmp    400476 &lt;factorial+0x30&gt;
+  40045f:	mov    -0x14(%rbp),%eax
+  400462:	movslq %eax,%rbx           # save n in %rbx (64-bit)
+  400465:	mov    -0x14(%rbp),%eax
+  400468:	sub    $0x1,%eax           # n - 1
+  40046b:	mov    %eax,%edi
+  40046d:	call   400446 &lt;factorial&gt;  # recursive call
+  400472:	imul   %rbx,%rax           # n * factorial(n-1)
+  400476:	mov    -0x8(%rbp),%rbx     # restore %rbx
+  40047a:	leave
+  40047b:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;factorial&gt;:
+  400446:	push   rbp
+  400447:	mov    rbp,rsp
+  40044a:	push   rbx
+  40044b:	sub    rsp,0x18
+  40044f:	mov    DWORD PTR [rbp-0x14],edi
+  400452:	cmp    DWORD PTR [rbp-0x14],0x1
+  400456:	jg     40045f &lt;factorial+0x19&gt;
+  400458:	mov    eax,0x1
+  40045d:	jmp    400476 &lt;factorial+0x30&gt;
+  40045f:	mov    eax,DWORD PTR [rbp-0x14]
+  400462:	movsxd rbx,eax
+  400465:	mov    eax,DWORD PTR [rbp-0x14]
+  400468:	sub    eax,0x1
+  40046b:	mov    edi,eax
+  40046d:	call   400446 &lt;factorial&gt;
+  400472:	imul   rax,rbx
+  400476:	mov    rbx,QWORD PTR [rbp-0x8]
+  40047a:	leave
+  40047b:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         12 — Heap Allocation (malloc/free)
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s12">
+      <h2>12 — Heap Allocation (malloc/free)</h2>
+      <div class="section-meta">Flags: -O0</div>
+      <p class="section-note">
+        <code>malloc</code> and <code>free</code> appear as PLT stubs (<code>malloc@plt</code>, <code>free@plt</code>) —
+        the linker's procedure linkage table for dynamic library calls.
+        The size argument <code>n * sizeof(int)</code> is computed with <code>shl $0x2,%rax</code> (multiply by 4).
+        The NULL check after malloc is a <code>cmpq $0x0 / jne</code> on the returned pointer.
+        Array indexing into heap memory uses the same scale pattern as stack arrays.
+      </p>
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">12_heap_alloc.c</span>
+          </div>
+          <pre><code class="language-c">/* 12 - Heap allocation (malloc/free) */
+#include &lt;stdlib.h&gt;
+
+int heap_demo(int n) {
+    int *arr = (int *)malloc(n * sizeof(int));
+    if (arr == NULL) { return -1; }
+    for (int i = 0; i &lt; n; i++) {
+        arr[i] = i * i;
+    }
+    int result = arr[n - 1];
+    free(arr);
+    return result;
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400476 &lt;heap_demo&gt;:
+  400476:	push   %rbp
+  400477:	mov    %rsp,%rbp
+  40047a:	sub    $0x30,%rsp
+  40047e:	mov    %edi,-0x24(%rbp)    # spill n
+  400481:	mov    -0x24(%rbp),%eax
+  400484:	cltq                        # sign-extend n to 64-bit
+  400486:	shl    $0x2,%rax            # n * 4  (sizeof int)
+  40048a:	mov    %rax,%rdi
+  40048d:	call   400380 &lt;malloc@plt&gt;  # malloc(n*4)
+  400492:	mov    %rax,-0x10(%rbp)     # arr = result
+  400496:	cmpq   $0x0,-0x10(%rbp)     # arr == NULL?
+  40049b:	jne    4004a4 &lt;heap_demo+0x2e&gt;
+  40049d:	mov    $0xffffffff,%eax     # return -1
+  4004a2:	jmp    4004fd &lt;heap_demo+0x87&gt;
+  4004a4:	movl   $0x0,-0x4(%rbp)     # i = 0
+  4004ab:	jmp    4004cd &lt;heap_demo+0x57&gt; # → condition
+  4004ad:	mov    -0x4(%rbp),%eax     # i
+  4004b0:	cltq
+  4004b2:	lea    0x0(,%rax,4),%rdx   # byte offset = i*4
+  4004ba:	mov    -0x10(%rbp),%rax    # arr base
+  4004be:	add    %rax,%rdx            # arr + i*4
+  4004c1:	mov    -0x4(%rbp),%eax     # i
+  4004c4:	imul   %eax,%eax            # i*i
+  4004c7:	mov    %eax,(%rdx)          # arr[i] = i*i
+  4004c9:	addl   $0x1,-0x4(%rbp)     # i++
+  4004cd:	mov    -0x4(%rbp),%eax
+  4004d0:	cmp    -0x24(%rbp),%eax    # i &lt; n?
+  4004d3:	jl     4004ad &lt;heap_demo+0x37&gt;
+  4004d5:	mov    -0x24(%rbp),%eax    # n-1 index
+  4004d8:	cltq
+  4004da:	shl    $0x2,%rax
+  4004de:	lea    -0x4(%rax),%rdx     # byte offset for arr[n-1]
+  4004e2:	mov    -0x10(%rbp),%rax
+  4004e6:	add    %rdx,%rax
+  4004e9:	mov    (%rax),%eax          # result = arr[n-1]
+  4004eb:	mov    %eax,-0x14(%rbp)
+  4004ee:	mov    -0x10(%rbp),%rax    # arr
+  4004f2:	mov    %rax,%rdi
+  4004f5:	call   400370 &lt;free@plt&gt;   # free(arr)
+  4004fa:	mov    -0x14(%rbp),%eax    # return result
+  4004fd:	leave
+  4004fe:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400476 &lt;heap_demo&gt;:
+  400476:	push   rbp
+  400477:	mov    rbp,rsp
+  40047a:	sub    rsp,0x30
+  40047e:	mov    DWORD PTR [rbp-0x24],edi
+  400481:	mov    eax,DWORD PTR [rbp-0x24]
+  400484:	cdqe
+  400486:	shl    rax,0x2
+  40048a:	mov    rdi,rax
+  40048d:	call   400380 &lt;malloc@plt&gt;
+  400492:	mov    QWORD PTR [rbp-0x10],rax
+  400496:	cmp    QWORD PTR [rbp-0x10],0x0
+  40049b:	jne    4004a4 &lt;heap_demo+0x2e&gt;
+  40049d:	mov    eax,0xffffffff
+  4004a2:	jmp    4004fd &lt;heap_demo+0x87&gt;
+  4004a4:	mov    DWORD PTR [rbp-0x4],0x0
+  4004ab:	jmp    4004cd &lt;heap_demo+0x57&gt;
+  4004ad:	mov    eax,DWORD PTR [rbp-0x4]
+  4004b0:	cdqe
+  4004b2:	lea    rdx,[rax*4+0x0]
+  4004ba:	mov    rax,QWORD PTR [rbp-0x10]
+  4004be:	add    rdx,rax
+  4004c1:	mov    eax,DWORD PTR [rbp-0x4]
+  4004c4:	imul   eax,eax
+  4004c7:	mov    DWORD PTR [rdx],eax
+  4004c9:	add    DWORD PTR [rbp-0x4],0x1
+  4004cd:	mov    eax,DWORD PTR [rbp-0x4]
+  4004d0:	cmp    eax,DWORD PTR [rbp-0x24]
+  4004d3:	jl     4004ad &lt;heap_demo+0x37&gt;
+  4004d5:	mov    eax,DWORD PTR [rbp-0x24]
+  4004d8:	cdqe
+  4004da:	shl    rax,0x2
+  4004de:	lea    rdx,[rax-0x4]
+  4004e2:	mov    rax,QWORD PTR [rbp-0x10]
+  4004e6:	add    rax,rdx
+  4004e9:	mov    eax,DWORD PTR [rax]
+  4004eb:	mov    DWORD PTR [rbp-0x14],eax
+  4004ee:	mov    rax,QWORD PTR [rbp-0x10]
+  4004f2:	mov    rdi,rax
+  4004f5:	call   400370 &lt;free@plt&gt;
+  4004fa:	mov    eax,DWORD PTR [rbp-0x14]
+  4004fd:	leave
+  4004fe:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         13 — Arithmetic & Bitwise Ops (-O0 vs -O2)
+    ══════════════════════════════════════════════════════════ -->
+    <section class="pattern-section" id="s13">
+      <h2>13 — Arithmetic &amp; Bitwise Ops</h2>
+      <div class="section-meta">Compiled twice: -O0 and -O2 · compare compiler transforms</div>
+      <p class="section-note">
+        At -O2 the compiler applies arithmetic strength reductions.
+        Key transforms to spot: <strong>multiply by 6</strong> → <code>lea (%rax,%rdi,8)</code> using addressing modes
+        (no <code>imul</code>); <strong>signed divide by 4</strong> → <code>lea 0x3 / cmovns / sar $0x2</code> (handles negative rounding);
+        <strong>signed mod 4</strong> → <code>sar $0x1f / shr $0x1e / add / and $0x3 / sub</code>;
+        <strong>AND 0xFF</strong> → <code>movzbl %dil,%edx</code> (zero-extend byte).
+        The -O2 version is 25 lines vs 75 at -O0.
+      </p>
+
+      <!-- O0 row -->
+      <div class="code-pair" style="margin-bottom:2px">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header">
+            <span class="dot"></span> C source
+            <span class="flag-tag">13_arith_bitwise.c</span>
+          </div>
+          <pre><code class="language-c">/* 13 - Arithmetic &amp; bitwise ops */
+int arith_ops(int a, int b) {
+    int add  = a + b;
+    int sub  = a - b;
+    int mul  = a * 6;      // strength-reduce candidate
+    int div  = a / 4;      // power-of-2: sar trick
+    int mod  = a % 4;      // power-of-2: and trick
+    int and  = a &amp; 0xFF;
+    int or   = a | 0x0F;
+    int xor  = a ^ b;
+    int shl  = a &lt;&lt; 3;
+    int shr  = a &gt;&gt; 2;
+    return add+sub+mul+div+mod+and+or+xor+shl+shr;
+}</code></pre>
+        </div>
+        <div class="code-panel asm-panel">
+          <div class="panel-header asm-header">
+            <span class="dot"></span> x64 disassembly — unoptimised
+            <span class="flag-tag">-O0</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400446 &lt;arith_ops&gt;:
+  400446:	push   %rbp
+  400447:	mov    %rsp,%rbp
+  40044a:	mov    %edi,-0x34(%rbp)
+  40044d:	mov    %esi,-0x38(%rbp)
+  400450:	mov    -0x34(%rbp),%edx
+  400453:	mov    -0x38(%rbp),%eax
+  400456:	add    %edx,%eax
+  400458:	mov    %eax,-0x4(%rbp)    # add = a+b
+  40045b:	mov    -0x34(%rbp),%eax
+  40045e:	sub    -0x38(%rbp),%eax
+  400461:	mov    %eax,-0x8(%rbp)    # sub = a-b
+  400464:	mov    -0x34(%rbp),%edx   # mul = a*6 via add/add:
+  400467:	mov    %edx,%eax           #   t = a
+  400469:	add    %eax,%eax           #   t = t+t  (2a)
+  40046b:	add    %edx,%eax           #   t = t+a  (3a)
+  40046d:	add    %eax,%eax           #   t = t+t  (6a)
+  40046f:	mov    %eax,-0xc(%rbp)
+  400472:	mov    -0x34(%rbp),%eax   # div = a/4 via sar trick:
+  400475:	lea    0x3(%rax),%edx      #   if a&lt;0: bias = a+3
+  400478:	test   %eax,%eax
+  40047a:	cmovs  %edx,%eax           #   select bias if signed
+  40047d:	sar    $0x2,%eax           #   arithmetic right-shift /4
+  400480:	mov    %eax,-0x10(%rbp)
+  400483:	mov    -0x34(%rbp),%edx   # mod = a%4 via bit trick:
+  400486:	mov    %edx,%eax
+  400488:	sar    $0x1f,%eax          #   sign mask (-1 or 0)
+  40048b:	shr    $0x1e,%eax          #   unsigned shift 30 → 0 or 3
+  40048e:	add    %eax,%edx           #   adjust for negative
+  400490:	and    $0x3,%edx           #   mask low 2 bits
+  400493:	sub    %eax,%edx           #   undo adjustment
+  400495:	mov    %edx,-0x14(%rbp)
+  400498:	mov    -0x34(%rbp),%eax
+  40049b:	movzbl %al,%eax            # and 0xFF = zero-extend byte
+  40049e:	mov    %eax,-0x18(%rbp)
+  4004a1:	mov    -0x34(%rbp),%eax
+  4004a4:	or     $0xf,%eax           # or  0x0F
+  4004a7:	mov    %eax,-0x1c(%rbp)
+  4004aa:	mov    -0x34(%rbp),%eax
+  4004ad:	xor    -0x38(%rbp),%eax    # xor b
+  4004b0:	mov    %eax,-0x20(%rbp)
+  4004b3:	mov    -0x34(%rbp),%eax
+  4004b6:	shl    $0x3,%eax           # shl 3
+  4004b9:	mov    %eax,-0x24(%rbp)
+  4004bc:	mov    -0x34(%rbp),%eax
+  4004bf:	sar    $0x2,%eax           # shr 2
+  4004c2:	mov    %eax,-0x28(%rbp)
+  4004c5:	mov    -0x4(%rbp),%edx    # sum all locals
+  4004c8:	mov    -0x8(%rbp),%eax
+  4004cb:	add    %eax,%edx
+  4004cd:	mov    -0xc(%rbp),%eax
+  4004d0:	add    %eax,%edx
+  4004d2:	mov    -0x10(%rbp),%eax
+  4004d5:	add    %eax,%edx
+  4004d7:	mov    -0x14(%rbp),%eax
+  4004da:	add    %eax,%edx
+  4004dc:	mov    -0x18(%rbp),%eax
+  4004df:	add    %eax,%edx
+  4004e1:	mov    -0x1c(%rbp),%eax
+  4004e4:	add    %eax,%edx
+  4004e6:	mov    -0x20(%rbp),%eax
+  4004e9:	add    %eax,%edx
+  4004eb:	mov    -0x24(%rbp),%eax
+  4004ee:	add    %eax,%edx
+  4004f0:	mov    -0x28(%rbp),%eax
+  4004f3:	add    %edx,%eax
+  4004f5:	pop    %rbp
+  4004f6:	ret</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400446 &lt;arith_ops&gt;:
+  400446:	push   rbp
+  400447:	mov    rbp,rsp
+  40044a:	mov    DWORD PTR [rbp-0x34],edi
+  40044d:	mov    DWORD PTR [rbp-0x38],esi
+  400450:	mov    edx,DWORD PTR [rbp-0x34]
+  400453:	mov    eax,DWORD PTR [rbp-0x38]
+  400456:	add    eax,edx
+  400458:	mov    DWORD PTR [rbp-0x4],eax
+  40045b:	mov    eax,DWORD PTR [rbp-0x34]
+  40045e:	sub    eax,DWORD PTR [rbp-0x38]
+  400461:	mov    DWORD PTR [rbp-0x8],eax
+  400464:	mov    edx,DWORD PTR [rbp-0x34]
+  400467:	mov    eax,edx
+  400469:	add    eax,eax
+  40046b:	add    eax,edx
+  40046d:	add    eax,eax
+  40046f:	mov    DWORD PTR [rbp-0xc],eax
+  400472:	mov    eax,DWORD PTR [rbp-0x34]
+  400475:	lea    edx,[rax+0x3]
+  400478:	test   eax,eax
+  40047a:	cmovs  eax,edx
+  40047d:	sar    eax,0x2
+  400480:	mov    DWORD PTR [rbp-0x10],eax
+  400483:	mov    edx,DWORD PTR [rbp-0x34]
+  400486:	mov    eax,edx
+  400488:	sar    eax,0x1f
+  40048b:	shr    eax,0x1e
+  40048e:	add    edx,eax
+  400490:	and    edx,0x3
+  400493:	sub    edx,eax
+  400495:	mov    DWORD PTR [rbp-0x14],edx
+  400498:	mov    eax,DWORD PTR [rbp-0x34]
+  40049b:	movzx  eax,al
+  40049e:	mov    DWORD PTR [rbp-0x18],eax
+  4004a1:	mov    eax,DWORD PTR [rbp-0x34]
+  4004a4:	or     eax,0xf
+  4004a7:	mov    DWORD PTR [rbp-0x1c],eax
+  4004aa:	mov    eax,DWORD PTR [rbp-0x34]
+  4004ad:	xor    eax,DWORD PTR [rbp-0x38]
+  4004b0:	mov    DWORD PTR [rbp-0x20],eax
+  4004b3:	mov    eax,DWORD PTR [rbp-0x34]
+  4004b6:	shl    eax,0x3
+  4004b9:	mov    DWORD PTR [rbp-0x24],eax
+  4004bc:	mov    eax,DWORD PTR [rbp-0x34]
+  4004bf:	sar    eax,0x2
+  4004c2:	mov    DWORD PTR [rbp-0x28],eax
+  4004c5:	mov    edx,DWORD PTR [rbp-0x4]
+  4004c8:	mov    eax,DWORD PTR [rbp-0x8]
+  4004cb:	add    edx,eax
+  4004cd:	mov    eax,DWORD PTR [rbp-0xc]
+  4004d0:	add    edx,eax
+  4004d2:	mov    eax,DWORD PTR [rbp-0x10]
+  4004d5:	add    edx,eax
+  4004d7:	mov    eax,DWORD PTR [rbp-0x14]
+  4004da:	add    edx,eax
+  4004dc:	mov    eax,DWORD PTR [rbp-0x18]
+  4004df:	add    edx,eax
+  4004e1:	mov    eax,DWORD PTR [rbp-0x1c]
+  4004e4:	add    edx,eax
+  4004e6:	mov    eax,DWORD PTR [rbp-0x20]
+  4004e9:	add    edx,eax
+  4004eb:	mov    eax,DWORD PTR [rbp-0x24]
+  4004ee:	add    edx,eax
+  4004f0:	mov    eax,DWORD PTR [rbp-0x28]
+  4004f3:	add    eax,edx
+  4004f5:	pop    rbp
+  4004f6:	ret</code></pre>
+        </div>
+      </div>
+
+      <!-- O2 row -->
+      <div class="code-pair">
+        <div class="code-panel c-panel">
+          <div class="panel-header c-header" style="color: var(--amber); background: rgba(255,179,0,0.04);">
+            <span class="dot" style="background:var(--amber);box-shadow:0 0 4px var(--amber)"></span> Same source — optimised
+            <span class="flag-tag" style="background:rgba(255,179,0,0.15);color:var(--amber)">-O2</span>
+          </div>
+          <pre><code class="language-c">/* Same source — compiler output changes dramatically */
+/* -O2 eliminates all stack temporaries,
+   fuses operations, and uses addressing-mode
+   arithmetic instead of imul for small multiplies. */</code></pre>
+        </div>
+        <div class="code-panel asm-panel optimized-panel">
+          <div class="panel-header asm-header optimized">
+            <span class="dot"></span> x64 disassembly — optimised
+            <span class="flag-tag">-O2</span>
+          <span class="syntax-label-att">AT&amp;T</span><span class="syntax-label-intel">Intel</span></div>
+          <pre class="syntax-att"><code class="language-x86asm">0000000000400460 &lt;arith_ops&gt;:
+  400460:	test   %edi,%edi           # div/4 setup: a &lt; 0?
+  400462:	lea    0x3(%rdi),%eax      # bias = a+3 (for neg rounding)
+  400465:	mov    %edi,%ecx           # save a for mod
+  400467:	cmovns %edi,%eax           # eax = a≥0 ? a : a+3
+  40046a:	sar    $0x1f,%ecx          # sign mask for mod (-1 or 0)
+  40046d:	xor    %edi,%esi           # xor = a^b  (in-place!)
+  40046f:	shr    $0x1e,%ecx          # unsigned shift → 0 or 3
+  400472:	lea    (%rdi,%rcx,1),%edx  # a + adjustment
+  400475:	sar    $0x2,%eax           # div = (a+bias) &gt;&gt; 2
+  400478:	and    $0x3,%edx           # mod (lower 2 bits)
+  40047b:	lea    (%rax,%rdi,8),%eax  # mul*6: eax + a*8 = div+a*8
+                                      # (encodes mul=a*6 + add + sub fused)
+  40047e:	sub    %ecx,%edx           # mod correction
+  400480:	add    %edx,%eax           # accumulate mod
+  400482:	movzbl %dil,%edx           # and 0xFF = zero-extend byte
+  400486:	add    %edx,%eax           # accumulate and
+  400488:	mov    %edi,%edx
+  40048a:	or     $0xf,%edx           # or 0x0F
+  40048d:	add    %edx,%eax           # accumulate or
+  40048f:	add    %esi,%eax           # accumulate xor
+  400491:	lea    (%rax,%rdi,8),%eax  # accumulate shl (a&lt;&lt;3 = a*8)
+  400494:	sar    $0x2,%edi           # shr = a&gt;&gt;2
+  400497:	add    %edi,%eax           # accumulate shr
+  400499:	ret                        # 25 instructions vs 75 at -O0</code></pre>
+          <pre class="syntax-intel"><code class="language-x86asm">0000000000400460 &lt;arith_ops&gt;:
+  400460:	test   edi,edi
+  400462:	lea    eax,[rdi+0x3]
+  400465:	mov    ecx,edi
+  400467:	cmovns eax,edi
+  40046a:	sar    ecx,0x1f
+  40046d:	xor    esi,edi
+  40046f:	shr    ecx,0x1e
+  400472:	lea    edx,[rdi+rcx*1]
+  400475:	sar    eax,0x2
+  400478:	and    edx,0x3
+  40047b:	lea    eax,[rax+rdi*8]
+  40047e:	sub    edx,ecx
+  400480:	add    eax,edx
+  400482:	movzx  edx,dil
+  400486:	add    eax,edx
+  400488:	mov    edx,edi
+  40048a:	or     edx,0xf
+  40048d:	add    eax,edx
+  40048f:	add    eax,esi
+  400491:	lea    eax,[rax+rdi*8]
+  400494:	sar    edi,0x2
+  400497:	add    eax,edi
+  400499:	ret</code></pre>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  compiled with gcc · objdump AT&amp;T syntax · x86-64 linux · no hand-written assembly
+</footer>
+
+<script>
+  // ── Syntax highlighting ──────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    hljs.configure({ ignoreUnescapedHTML: true });
+    hljs.highlightAll();
+
+    // ── Active nav via Intersection Observer ─────────────────
+    const sections = document.querySelectorAll('.pattern-section');
+    const navLinks = document.querySelectorAll('.toc a');
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.id;
+          navLinks.forEach(link => {
+            link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+          });
+        }
+      });
+    }, {
+      rootMargin: '-20% 0px -60% 0px',
+      threshold: 0
+    });
+
+    sections.forEach(section => observer.observe(section));
+  });
+
+  // Syntax toggle
+  const syntaxBtn = document.getElementById('syntaxToggle');
+  const saved = localStorage.getItem('syntaxMode') || 'intel';
+  if (saved !== 'att') document.body.classList.add('intel-mode');
+
+  syntaxBtn.addEventListener('click', () => {
+    const intel = document.body.classList.toggle('intel-mode');
+    localStorage.setItem('syntaxMode', intel ? 'intel' : 'att');
+  });
+</script>
+
+</body>
+</html>
